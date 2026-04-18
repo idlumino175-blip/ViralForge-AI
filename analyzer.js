@@ -30,6 +30,53 @@ if (process.env.GDRIVE_SERVICE_ACCOUNT_BASE64) {
     } catch (e) { console.log('⚠️  GDrive auth failed:', e.message); }
 }
 
+async function updateMetadataDB(clipData) {
+    if (!drive || !GDRIVE_FOLDER_ID) return;
+    try {
+        console.log(`   🗄️  Syncing metadata to Google Drive database...`);
+        // 1. Search for existing database
+        const list = await drive.files.list({
+            q: `'${GDRIVE_FOLDER_ID}' in parents and name='clips_db.json' and trashed=false`,
+            fields: 'files(id)'
+        });
+        
+        let db = [];
+        let dbFileId = null;
+        
+        if (list.data.files && list.data.files.length > 0) {
+            dbFileId = list.data.files[0].id;
+            const res = await drive.files.get({ fileId: dbFileId, alt: 'media' });
+            db = res.data;
+        }
+
+        // 2. Add new entry
+        db.unshift({
+            ...clipData,
+            processedAt: new Date().toISOString()
+        });
+
+        // Keep last 100 clips
+        if (db.length > 100) db = db.slice(0, 100);
+
+        // 3. Upload back
+        const media = {
+            mimeType: 'application/json',
+            body: JSON.stringify(db, null, 2)
+        };
+
+        if (dbFileId) {
+            await drive.files.update({ fileId: dbFileId, media });
+        } else {
+            await drive.files.create({
+                requestBody: { name: 'clips_db.json', parents: [GDRIVE_FOLDER_ID] },
+                media,
+                fields: 'id'
+            });
+        }
+        console.log(`   ✅ Database synced!`);
+    } catch (e) { console.log(`   ⚠️  Meta Sync failed:`, e.message); }
+}
+
 async function uploadToDrive(filePath, fileName) {
     if (!drive || !GDRIVE_FOLDER_ID) return null;
     try {
@@ -37,10 +84,10 @@ async function uploadToDrive(filePath, fileName) {
         const res = await drive.files.create({
             requestBody: { name: fileName, parents: [GDRIVE_FOLDER_ID] },
             media: { body: fs.createReadStream(filePath) },
-            fields: 'id'
+            fields: 'id, webViewLink'
         });
-        console.log(`   ✅ Uploaded! File ID: ${res.data.id}`);
-        return res.data.id;
+        console.log(`   ✅ Uploaded!`);
+        return { id: res.data.id, link: res.data.webViewLink };
     } catch (e) { console.log(`   ❌ Upload failed: ${e.message}`); return null; }
 }
 
@@ -370,7 +417,18 @@ async function downloadClip(videoId, clip, outputDir = './downloads', layout = '
                     console.log(`   ⚠️  Convert failed: ${convError.message}`);
                 } else {
                     console.log(`   ✅ Video processed successfully!`);
-                    await uploadToDrive(outputFile, path.basename(outputFile));
+                    const driveData = await uploadToDrive(outputFile, path.basename(outputFile));
+                    if (driveData) {
+                        await updateMetadataDB({
+                            title: clip.title,
+                            videoId,
+                            originalUrl: `https://youtube.com/watch?v=${videoId}`,
+                            driveLink: driveData.link,
+                            duration: clip.duration_seconds,
+                            layout: layout
+                        });
+                        try { fs.unlinkSync(outputFile); } catch (e) {}
+                    }
                 }
                 resolve(outputFile);
             });
@@ -412,16 +470,43 @@ function saveResults(results, videoId) {
 /**
  * Main function
  */
-async function main() {
-    // CLI args: node analyzer.js <youtube_url> <layout> <viral_y_or_n>
-    const args = process.argv.slice(2);
-    let cliUrl = args[0];
-    const cliLayout = args[1] || 'letterbox';
-    const cliViral = args[2] === 'y';
-    const dripMode = args.includes('--drip');
+async function processSingleVideo(url, layout, isViral, automationMode = true) {
+    const videoId = extractVideoId(url);
+    if (!videoId) { console.log('   ❌ Invalid YouTube URL'); return false; }
+
+    console.log(`\n[1/3] Fetching video details...`);
+    const videoData = await getVideoDetails(videoId);
+    if (!videoData) { console.log('   ❌ Could not fetch video details'); return false; }
+    console.log(`      Title: ${videoData.title}`);
+
+    console.log('\n[2/3] Analyzing for 8-10 viral moments...');
+    const transcript = await fetchTranscript(videoId);
+    const description = await fetchDescription(videoId);
+    const clips = await findViralClips(videoData, videoId, transcript, description);
     
-    // Automation mode is active if a URL is passed OR if --drip is used
-    let automationMode = !!cliUrl || dripMode;
+    if (clips.length === 0) {
+        console.log('\n   ⚠️  No viral clips found for this video.');
+        return true; // Mark as done to move to next
+    }
+
+    const videoUrl = `https://youtube.com/watch?v=${videoId}`;
+    saveResults({ videoTitle: videoData.title, videoUrl, clips }, videoId);
+
+    console.log(`\n[3/3] Processing ${clips.length} clips...`);
+    console.log(`      📐 Layout: ${layout} | 🔥 Viral: ${isViral ? 'YES' : 'NO'}`);
+    
+    clips.forEach(c => c.viralMode = isViral);
+    await downloadAllClips(videoId, clips, layout);
+    
+    return true;
+}
+
+async function main() {
+    const args = process.argv.slice(2);
+    const isBatch = args.includes('--batch');
+    const cliUrl = args.find(a => a.startsWith('http'));
+    const cliLayout = args.find(a => !a.startsWith('--') && !a.startsWith('http')) || 'letterbox';
+    const cliViral = args.includes('y');
 
     const readline = require('readline');
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -429,77 +514,57 @@ async function main() {
 
     try {
         console.log('\n' + '='.repeat(60));
-        if (dripMode) console.log('VIRAL CLIP ANALYZER - 💧 DRIP-FEED MODE (2 Clips)');
-        else console.log(automationMode ? 'VIRAL CLIP ANALYZER - 🤖 AUTOMATION MODE' : 'VIRAL CLIP ANALYZER');
+        if (isBatch) console.log('VIRAL CLIP ANALYZER - 🏢 BATCH PROCESSING MODE');
+        else if (cliUrl) console.log('VIRAL CLIP ANALYZER - 🤖 AUTOMATION MODE');
+        else console.log('VIRAL CLIP ANALYZER');
         console.log('='.repeat(60));
 
-        // State & URL logic for Drip Mode
-        let processedState = {};
-        if (dripMode) {
-            if (fs.existsSync('state.json')) {
-                processedState = JSON.parse(fs.readFileSync('state.json', 'utf8'));
+        if (isBatch) {
+            if (!fs.existsSync('urls.txt')) {
+                console.log('❌ urls.txt not found. Create it with YouTube URLs to start batch mode.');
+                return;
             }
-            if (fs.existsSync('urls.txt')) {
-                const urls = fs.readFileSync('urls.txt', 'utf8').split('\n').map(u => u.trim()).filter(u => u);
-                // Find the first URL that isn't fully done yet (this is Option 1 logic)
-                cliUrl = urls[0]; 
-            }
-        }
+            const urls = fs.readFileSync('urls.txt', 'utf8').split('\n').map(u => u.trim()).filter(u => u && !u.startsWith('#'));
+            console.log(`🚀 Found ${urls.length} videos to process...\n`);
 
-        const url = cliUrl || await question('\nEnter YouTube URL: ');
-        const videoId = extractVideoId(url);
-        if (!videoId) { console.log('Invalid YouTube URL'); return; }
-
-        console.log('\n[1/2] Fetching video details...');
-        const videoData = await getVideoDetails(videoId);
-        if (!videoData) { console.log('Could not fetch video details'); return; }
-        console.log(`  Title: ${videoData.title}`);
-
-        console.log('\n[2/2] Analyzing for 8-10 viral moments...');
-        const transcript = await fetchTranscript(videoId);
-        const description = await fetchDescription(videoId);
-        const clips = await findViralClips(videoData, videoId, transcript, description);
-        if (clips.length === 0) { console.log('\nNo viral clips found'); return; }
-
-        const videoUrl = `https://youtube.com/watch?v=${videoId}`;
-        saveResults({ videoTitle: videoData.title, videoUrl, clips }, videoId);
-
-        if (automationMode) {
-            // --- GITHUB ACTIONS HEADLESS MODE ---
-            let clipsToDownload = clips;
-            
-            if (dripMode) {
-                const alreadyDone = processedState[videoId] || [];
-                // Find the next 2 clips that AREN'T in alreadyDone
-                clipsToDownload = clips.filter((_, index) => !alreadyDone.includes(index)).slice(0, 2);
+            for (let i = 0; i < urls.length; i++) {
+                console.log(`\n📦 PROCESSING VIDEO ${i + 1}/${urls.length}: ${urls[i]}`);
+                const success = await processSingleVideo(urls[i], cliLayout, cliViral);
                 
-                if (clipsToDownload.length === 0) {
-                    console.log('🚀 Video fully processed! Cleaning urls.txt...');
-                    // Remove the top URL from urls.txt since it's finished
-                    if (fs.existsSync('urls.txt')) {
-                        const urls = fs.readFileSync('urls.txt', 'utf8').split('\n').filter(u => u.trim());
-                        urls.shift();
-                        fs.writeFileSync('urls.txt', urls.join('\n'));
-                    }
-                    console.log('Please run again to start the next video.');
-                    return;
+                if (success) {
+                    // Update urls.txt to remove the finished URL
+                    const remaining = urls.slice(i + 1);
+                    fs.writeFileSync('urls.txt', remaining.join('\n'));
                 }
-                
-                // Track these indices as done
-                processedState[videoId] = [...alreadyDone, ...clipsToDownload.map(c => clips.indexOf(c))];
-                fs.writeFileSync('state.json', JSON.stringify(processedState, null, 2));
             }
-
-            console.log(`\n🤖 Processing ${clipsToDownload.length} clips...`);
-            console.log(`   📐 Layout: ${cliLayout} | 🔥 Viral: ${cliViral ? 'YES' : 'NO'}`);
-            clipsToDownload.forEach(c => c.viralMode = cliViral);
-            await downloadAllClips(videoId, clipsToDownload, cliLayout);
+            console.log('\n🌟 ALL BATCH TASKS COMPLETE!');
+        } else if (cliUrl) {
+            await processSingleVideo(cliUrl, cliLayout, cliViral);
             console.log('\n✅ TASK COMPLETE!');
         } else {
             // --- INTERACTIVE MODE ---
+            const url = await question('\nEnter YouTube URL: ');
+            const videoId = extractVideoId(url);
+            if (!videoId) { console.log('Invalid YouTube URL'); return; }
+
+            console.log('\n[1/2] Fetching video details...');
+            const videoData = await getVideoDetails(videoId);
+            if (!videoData) { console.log('Could not fetch video details'); return; }
+            console.log(`  Title: ${videoData.title}`);
+
+            console.log('\n[2/2] Analyzing for 8-10 viral moments...');
+            const transcript = await fetchTranscript(videoId);
+            const description = await fetchDescription(videoId);
+            const clips = await findViralClips(videoData, videoId, transcript, description);
+            
+            if (clips.length === 0) {
+                console.log('\nNo viral clips found');
+                return;
+            }
+
             console.log(`\nFound ${clips.length} VIRAL CLIPS!`);
             console.log('='.repeat(60));
-            for (const clip of clips) console.log(formatClip(clip, videoData.title, videoUrl));
+            for (const clip of clips) console.log(formatClip(clip, videoData.title, `https://youtube.com/watch?v=${videoId}`));
 
             const download = await question(`\n📥 Download? (clip number 1-${clips.length}, 'all', or 'n'): `);
             if (download.toLowerCase() !== 'n' && download.toLowerCase() !== 'no') {
@@ -511,13 +576,12 @@ async function main() {
                 const isViral = viralMode.toLowerCase().startsWith('y');
 
                 let clipsToDownload = [];
-                if (download.toLowerCase() === 'all') {
-                    clipsToDownload = clips;
-                } else {
+                if (download.toLowerCase() === 'all') clipsToDownload = clips;
+                else {
                     const n = parseInt(download);
                     if (!isNaN(n) && n >= 1 && n <= clips.length) clipsToDownload = [clips[n - 1]];
-                    else console.log('Invalid number.');
                 }
+
                 if (clipsToDownload.length > 0) {
                     clipsToDownload.forEach(c => c.viralMode = isViral);
                     await downloadAllClips(videoId, clipsToDownload, layout);
@@ -525,6 +589,11 @@ async function main() {
             }
         }
     } catch (error) {
+        console.error('\n   ❌ Error:', error.message);
+    } finally {
+        rl.close();
+    }
+}
         console.error('\nError:', error.message);
     } finally {
         rl.close();

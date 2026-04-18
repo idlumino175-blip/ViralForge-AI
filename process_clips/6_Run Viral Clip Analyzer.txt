@@ -1,0 +1,54 @@
+﻿2026-04-18T12:41:35.6370544Z ##[group]Run # Detect if we should use --drip mode
+2026-04-18T12:41:35.6370988Z [36;1m# Detect if we should use --drip mode[0m
+2026-04-18T12:41:35.6371380Z [36;1m# Use drip if it's a schedule OR if the manual URL is blank[0m
+2026-04-18T12:41:35.6371803Z [36;1mif [ "workflow_dispatch" == "schedule" ] || [ -z "" ]; then[0m
+2026-04-18T12:41:35.6372607Z [36;1m  echo "💧 Running in Drip-Feed mode (checking urls.txt)..."[0m
+2026-04-18T12:41:35.6373019Z [36;1m  node analyzer.js --drip "letterbox" "y"[0m
+2026-04-18T12:41:35.6373305Z [36;1melse[0m
+2026-04-18T12:41:35.6373541Z [36;1m  echo "🤖 Running in Manual mode for URL: "[0m
+2026-04-18T12:41:35.6373867Z [36;1m  node analyzer.js "" "letterbox" "y"[0m
+2026-04-18T12:41:35.6374133Z [36;1mfi[0m
+2026-04-18T12:41:35.6395032Z shell: /usr/bin/bash -e {0}
+2026-04-18T12:41:35.6395289Z env:
+2026-04-18T12:41:35.6395884Z   GEMINI_API_KEY: ***
+2026-04-18T12:41:35.6396215Z   YOUTUBE_API_KEY: ***
+2026-04-18T12:41:35.6489588Z   GDRIVE_SERVICE_ACCOUNT_BASE64: ***
+2026-04-18T12:41:35.6489977Z   GDRIVE_FOLDER_ID: ***
+2026-04-18T12:41:35.6490190Z ##[endgroup]
+2026-04-18T12:41:35.6534271Z 💧 Running in Drip-Feed mode (checking urls.txt)...
+2026-04-18T12:41:36.3974427Z ✅ Google Drive connected!
+2026-04-18T12:41:36.3990641Z 
+2026-04-18T12:41:36.3991153Z ============================================================
+2026-04-18T12:41:36.3992399Z VIRAL CLIP ANALYZER - 💧 DRIP-FEED MODE (2 Clips)
+2026-04-18T12:41:36.3993078Z ============================================================
+2026-04-18T12:41:36.3994016Z 
+2026-04-18T12:41:36.3994276Z [1/2] Fetching video details...
+2026-04-18T12:41:36.5290165Z   Title: Khan Sir on India’s Reality, Government, Education System, Politics & Poverty | FO497 Raj Shamani
+2026-04-18T12:41:36.5291194Z 
+2026-04-18T12:41:36.5291528Z [2/2] Analyzing for 8-10 viral moments...
+2026-04-18T12:41:36.5292176Z   Fetching transcript...
+2026-04-18T12:41:37.6793767Z   Video duration: 1:03:25
+2026-04-18T12:41:37.6970308Z   Views: 2,145,235
+2026-04-18T12:41:53.2876482Z 
+2026-04-18T12:41:53.2877356Z Saved 8 clips to viral_clips_sX6gEwH-SA4.json
+2026-04-18T12:41:53.2881028Z 
+2026-04-18T12:41:53.2881860Z 🤖 Processing 2 clips...
+2026-04-18T12:41:53.2882839Z    📐 Layout: letterbox | 🔥 Viral: YES
+2026-04-18T12:41:53.2883213Z 
+2026-04-18T12:41:53.2883492Z 📥 STARTING DOWNLOADS...
+2026-04-18T12:41:53.2888710Z 
+2026-04-18T12:41:53.2889691Z ⬇️  Downloading: Medical Mafia vs. Khan Sir’s ₹10 Treatment 🏥 (12:35 - 13:40)
+2026-04-18T12:41:54.4782227Z    ❌ Failed: Medical Mafia vs. Khan Sir’s ₹10 Treatment 🏥 (Command failed: yt-dlp -f "best[height<=1080]" --download-sections "*12m35s-13m40s" --merge-output-format mp4 --output "./downloads/Medical_Mafia_vs__Khan_Sir_s__10_Treatment____temp.mp4" "https://youtube.com/watch?v=sX6gEwH-SA4"
+2026-04-18T12:41:54.4786819Z WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+2026-04-18T12:41:54.4789622Z WARNING: [youtube] No title found in player responses; falling back to title from initial data. Other metadata may also be missing
+2026-04-18T12:41:54.4792792Z ERROR: [youtube] sX6gEwH-SA4: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+2026-04-18T12:41:54.4794350Z )
+2026-04-18T12:41:54.4794460Z 
+2026-04-18T12:41:54.4794850Z ⬇️  Downloading: Khan Sir vs. The Coaching Mafia 💸 (28:55 - 30:00)
+2026-04-18T12:41:55.5304817Z    ❌ Failed: Khan Sir vs. The Coaching Mafia 💸 (Command failed: yt-dlp -f "best[height<=1080]" --download-sections "*28m55s-30m00s" --merge-output-format mp4 --output "./downloads/Khan_Sir_vs__The_Coaching_Mafia____temp.mp4" "https://youtube.com/watch?v=sX6gEwH-SA4"
+2026-04-18T12:41:55.5309351Z WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled by default; to use another runtime add  --js-runtimes RUNTIME[:PATH]  to your command/config. YouTube extraction without a JS runtime has been deprecated, and some formats may be missing. See  https://github.com/yt-dlp/yt-dlp/wiki/EJS  for details on installing one
+2026-04-18T12:41:55.5311274Z WARNING: [youtube] No title found in player responses; falling back to title from initial data. Other metadata may also be missing
+2026-04-18T12:41:55.5314199Z ERROR: [youtube] sX6gEwH-SA4: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
+2026-04-18T12:41:55.5315751Z )
+2026-04-18T12:41:55.5315871Z 
+2026-04-18T12:41:55.5316000Z ✅ TASK COMPLETE!
