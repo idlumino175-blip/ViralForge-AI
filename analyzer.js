@@ -316,7 +316,10 @@ async function downloadClip(videoId, clip, outputDir = './downloads', layout = '
         const safeTitle = clip.title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
         const tempFile = `${outputDir}/${safeTitle}_temp.mp4`;
         const outputFile = `${outputDir}/${safeTitle}.mp4`;
-        const downloadCmd = `yt-dlp -f "best[height<=1080]" --download-sections "*${startTime}-${endTime}" --merge-output-format mp4 --output "${tempFile}" "https://youtube.com/watch?v=${videoId}"`;
+        let downloadCmd = `yt-dlp -f "best[height<=1080]" --download-sections "*${startTime}-${endTime}" --merge-output-format mp4 --extractor-args "youtube:player-client=android,web" --output "${tempFile}" "https://youtube.com/watch?v=${videoId}"`;
+        if (fs.existsSync('cookies.txt')) {
+            downloadCmd = downloadCmd.replace('yt-dlp', 'yt-dlp --cookies cookies.txt');
+        }
 
         console.log(`\n⬇️  Downloading: ${clip.title} (${clip.timestamp_start} - ${clip.timestamp_end})`);
         exec(downloadCmd, { timeout: 180000 }, async (error) => {

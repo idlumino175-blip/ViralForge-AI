@@ -35,10 +35,19 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-          sudo pip install yt-dlp
+          sudo pip install -U yt-dlp
 
       - name: Install Node Dependencies
         run: npm install
+
+      - name: Load YouTube Cookies (if secret exists)
+        run: |
+          if [ -n "${{ secrets.YT_COOKIES }}" ]; then
+            echo "${{ secrets.YT_COOKIES }}" > cookies.txt
+            echo "🍪 Cookies loaded successfully."
+          else
+            echo "⏭️ No cookies secret found, skipping."
+          fi
 
       - name: Run Viral Clip Analyzer
         env:
