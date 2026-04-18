@@ -5,43 +5,26 @@ import { Play, Download, ExternalLink, Moon, Sun, Search, RefreshCw } from 'luci
 function App() {
   const [clips, setClips] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isDark, setIsDark] = useState(false);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
     fetchClips();
-    // Default to dark if user prefers
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      setIsDark(true);
-    }
   }, []);
 
   const fetchClips = async () => {
     setLoading(true);
     try {
-      // In production, this calls our Vercel API
       const response = await fetch('/api/clips');
       if (!response.ok) throw new Error('Database not found');
       const data = await response.json();
       setClips(data);
     } catch (err) {
-      console.log('Using mock data for development...', err.message);
-      // MOCK DATA for preview
+      console.log('Static preview mode...');
       setClips([
-        {
-          title: "Khan Sir on Education Reality",
-          videoId: "sX6gEwH-SA4",
-          driveLink: "#",
-          layout: "letterbox",
-          processedAt: new Date().toISOString()
-        },
-        {
-          title: "The Logic of Success",
-          videoId: "sX6gEwH-SA4",
-          driveLink: "#",
-          layout: "center",
-          processedAt: new Date().toISOString()
-        }
+        { title: "Khan Sir: The Truth About Jobs", videoId: "sX6gEwH-SA4", driveLink: "#", layout: "letterbox", processedAt: new Date().toISOString() },
+        { title: "Education System Breakdown", videoId: "sX6gEwH-SA4", driveLink: "#", layout: "center", processedAt: new Date().toISOString() },
+        { title: "Why Innovation Fails", videoId: "sX6gEwH-SA4", driveLink: "#", layout: "split", processedAt: new Date().toISOString() },
+        { title: "The Future of Politics", videoId: "sX6gEwH-SA4", driveLink: "#", layout: "letterbox", processedAt: new Date().toISOString() }
       ]);
     } finally {
       setLoading(false);
@@ -53,93 +36,99 @@ function App() {
   );
 
   return (
-    <div className="app-wrapper" data-theme={isDark ? 'dark' : 'light'}>
-      <div className="container">
-        <header className="header">
-          <div className="brand">
-            <motion.h1 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6 }}
-            >
-              ViralForge <span style={{ fontWeight: 400, opacity: 0.6 }}>Clips</span>
-            </motion.h1>
-            <p>Your premium content vault, synchronized from the cloud.</p>
-          </div>
-          
-          <div className="header-actions">
-            <button className="btn btn-secondary" onClick={() => setIsDark(!isDark)}>
-              {isDark ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-          </div>
-        </header>
-
-        <div className="search-bar" style={{ marginBottom: '3rem', position: 'relative' }}>
-          <Search style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }} size={20} />
-          <input 
-            type="text" 
-            placeholder="Search your library..." 
-            className="btn btn-secondary"
-            style={{ width: '100%', paddingLeft: '3rem', height: '3.5rem', textAlign: 'left', borderRadius: '12px' }}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-
-        {loading ? (
-          <div className="loading">
-            <div className="spinner"></div>
-            <p className="serif">Fetching your viral desk...</p>
-          </div>
-        ) : (
-          <motion.div 
-            className="grid"
-            initial="hidden"
-            animate="visible"
-            variants={{
-              hidden: { opacity: 0 },
-              visible: {
-                opacity: 1,
-                transition: { staggerChildren: 0.1 }
-              }
-            }}
+    <div className="container">
+      <header className="header">
+        <div className="header-title">
+          <motion.h1 
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.8 }}
           >
-            <AnimatePresence>
-              {filteredClips.map((clip, idx) => (
-                <motion.div 
-                  key={idx}
-                  className="clip-card"
-                  variants={{
-                    hidden: { opacity: 0, scale: 0.95 },
-                    visible: { opacity: 1, scale: 1 }
-                  }}
-                  layout
-                >
-                  <div className="clip-thumbnail">
-                    <Play size={40} strokeWidth={1.5} opacity={0.3} />
+            ViralForge <span style={{ opacity: 0.4 }}>Studio</span>
+          </motion.h1>
+          <p>High-performance content library powered by Gemini AI.</p>
+        </div>
+        
+        <button className="btn btn-outline" style={{ borderRadius: '8px' }} onClick={fetchClips}>
+          <RefreshCw size={16} /> Sync Library
+        </button>
+      </header>
+
+      <div className="search-container" style={{ position: 'relative' }}>
+        <Search style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', opacity: 0.3 }} size={18} />
+        <input 
+          type="text" 
+          placeholder="Filter your collection..." 
+          className="search-input"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      {loading ? (
+        <div className="loading">
+          <div className="spinner"></div>
+          <p style={{ fontFamily: 'Source Serif 4', color: '#92928F' }}>Opening Library...</p>
+        </div>
+      ) : (
+        <motion.div 
+          className="grid"
+          initial="hidden"
+          animate="visible"
+          variants={{
+            hidden: { opacity: 0 },
+            visible: { opacity: 1, transition: { staggerChildren: 0.05 } }
+          }}
+        >
+          <AnimatePresence>
+            {filteredClips.map((clip, idx) => (
+              <motion.div 
+                key={idx}
+                className="clip-card"
+                variants={{
+                  hidden: { opacity: 0, y: 10 },
+                  visible: { opacity: 1, y: 0 }
+                }}
+                layout
+              >
+                <div className="clip-thumbnail">
+                  <Play className="play-icon" size={32} strokeWidth={1.5} />
+                </div>
+                <div className="clip-content">
+                  <h3 className="clip-title">{clip.title}</h3>
+                  
+                  <div className="clip-meta">
+                    <span className="badge">{clip.layout}</span>
+                    <span>{new Date(clip.processedAt).toLocaleDateString()}</span>
                   </div>
-                  <div className="clip-content">
-                    <div className="tag" style={{ marginBottom: '1rem' }}>{clip.layout}</div>
-                    <h3 className="clip-title">{clip.title}</h3>
-                    <div className="clip-meta">
-                      <span>{new Date(clip.processedAt).toLocaleDateString()}</span>
-                      <span>•</span>
-                      <span>ID: {clip.videoId}</span>
-                    </div>
-                    <div className="clip-actions">
-                      <a href={clip.driveLink} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
-                        <Download size={16} /> Open Drive
-                      </a>
-                      <a href={`https://youtube.com/watch?v=${clip.videoId}`} target="_blank" rel="noopener noreferrer" className="btn btn-secondary">
-                        <ExternalLink size={16} /> Original Video
-                      </a>
-                    </div>
+
+                  <div className="actions-overlay">
+                    <a href={clip.driveLink} target="_blank" rel="noopener noreferrer" className="btn btn-primary">
+                      <Download size={14} /> Drive
+                    </a>
+                    <a href={`https://youtube.com/watch?v=${clip.videoId}`} target="_blank" rel="noopener noreferrer" className="btn btn-outline" title="Watch Original">
+                      <ExternalLink size={14} />
+                    </a>
                   </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </motion.div>
-        )}
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </motion.div>
+      )}
+
+      {filteredClips.length === 0 && !loading && (
+        <div style={{ textAlign: 'center', marginTop: '6rem', opacity: 0.3 }}>
+           <p style={{ fontFamily: 'Source Serif 4', fontSize: '1.2rem' }}>No matching clips found.</p>
+        </div>
+      )}
+
+      <footer style={{ marginTop: '8rem', paddingBottom: '2rem', textAlign: 'center', opacity: 0.2, fontSize: '0.75rem' }}>
+        <p>VIRALFORGE PRO v1.0 • PRIVATELY HOSTED • 2026</p>
+      </footer>
+    </div>
+  );
+}
 
         {filteredClips.length === 0 && !loading && (
           <div style={{ textAlign: 'center', marginTop: '4rem', opacity: 0.5 }}>
