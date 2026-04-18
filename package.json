@@ -1,0 +1,16 @@
+{
+  "name": "viral-clip-analyzer",
+  "version": "1.0.0",
+  "description": "AI-powered tool that finds **ALL viral clips** from long YouTube videos and optionally downloads them.",
+  "main": "analyzer.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "googleapis": "^171.4.0"
+  }
+}

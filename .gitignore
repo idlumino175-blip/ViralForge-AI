@@ -1,0 +1,15 @@
+node_modules/
+downloads/
+downloads_vertical/
+*.mp4
+*.jpg
+*.vtt
+b64.txt
+credentials/
+.env
+
+# Allow essential JSON files
+!package.json
+!package-lock.json
+!state.json
+!viral_clips_*.json

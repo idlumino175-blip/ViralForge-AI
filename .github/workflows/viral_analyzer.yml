@@ -1,0 +1,64 @@
+name: 24/7 Viral Clip Automation
+
+on:
+  workflow_dispatch:
+    inputs:
+      youtube_url:
+        description: 'YouTube URL to analyze (Optional - use urls.txt for drip-feed)'
+        required: false
+      layout:
+        description: 'Video Layout (letterbox, center, split, square)'
+        required: true
+        default: 'letterbox'
+      viral_mode:
+        description: 'Enable Viral Speed (1.2x + Jumpcuts)? (y/n)'
+        required: true
+        default: 'y'
+  schedule:
+    - cron: '0 */3 * * *' # Runs every 3 hours
+
+jobs:
+  process_clips:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to save state.json back to the repo
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          sudo pip install yt-dlp
+
+      - name: Install Node Dependencies
+        run: npm install
+
+      - name: Run Viral Clip Analyzer
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          GDRIVE_SERVICE_ACCOUNT_BASE64: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_BASE64 }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+        run: |
+          # If triggered by schedule, use --drip mode
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            node analyzer.js --drip "letterbox" "y"
+          else
+            # If triggered manually, process the specific URL
+            node analyzer.js "${{ github.event.inputs.youtube_url }}" "${{ github.event.inputs.layout }}" "${{ github.event.inputs.viral_mode }}"
+          fi
+
+      - name: Save Progress (Commit State)
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add state.json urls.txt
+          git commit -m "chore: update drip-feed state [skip ci]" || echo "No changes to commit"
+          git push
