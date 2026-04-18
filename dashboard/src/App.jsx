@@ -130,18 +130,4 @@ function App() {
   );
 }
 
-        {filteredClips.length === 0 && !loading && (
-          <div style={{ textAlign: 'center', marginTop: '4rem', opacity: 0.5 }}>
-             <p className="serif" style={{ fontSize: '1.2rem' }}>No clips found yet. Run your local engine to populate the database.</p>
-          </div>
-        )}
-
-        <footer style={{ marginTop: '8rem', textAlign: 'center', opacity: 0.4, fontSize: '0.8rem' }}>
-          <p>© 2026 ViralForge Intelligence. Built with Claude Aesthetics.</p>
-        </footer>
-      </div>
-    </div>
-  );
-}
-
 export default App;
