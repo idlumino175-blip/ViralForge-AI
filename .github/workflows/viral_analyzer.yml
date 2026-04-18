@@ -4,24 +4,24 @@ on:
   workflow_dispatch:
     inputs:
       youtube_url:
-        description: 'YouTube URL to analyze (Optional - use urls.txt for drip-feed)'
+        description: 'YouTube URL (Leave empty to use urls.txt)'
         required: false
       layout:
-        description: 'Video Layout (letterbox, center, split, square)'
+        description: 'Video Layout'
         required: true
         default: 'letterbox'
       viral_mode:
-        description: 'Enable Viral Speed (1.2x + Jumpcuts)? (y/n)'
+        description: 'Viral Speed (y/n)'
         required: true
         default: 'y'
   schedule:
-    - cron: '0 */3 * * *' # Runs every 3 hours
+    - cron: '0 */3 * * *'
 
 jobs:
   process_clips:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Needed to save state.json back to the repo
+      contents: write
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -47,11 +47,13 @@ jobs:
           GDRIVE_SERVICE_ACCOUNT_BASE64: ${{ secrets.GDRIVE_SERVICE_ACCOUNT_BASE64 }}
           GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
         run: |
-          # If triggered by schedule, use --drip mode
-          if [ "${{ github.event_name }}" == "schedule" ]; then
-            node analyzer.js --drip "letterbox" "y"
+          # Detect if we should use --drip mode
+          # Use drip if it's a schedule OR if the manual URL is blank
+          if [ "${{ github.event_name }}" == "schedule" ] || [ -z "${{ github.event.inputs.youtube_url }}" ]; then
+            echo "💧 Running in Drip-Feed mode (checking urls.txt)..."
+            node analyzer.js --drip "${{ github.event.inputs.layout }}" "${{ github.event.inputs.viral_mode }}"
           else
-            # If triggered manually, process the specific URL
+            echo "🤖 Running in Manual mode for URL: ${{ github.event.inputs.youtube_url }}"
             node analyzer.js "${{ github.event.inputs.youtube_url }}" "${{ github.event.inputs.layout }}" "${{ github.event.inputs.viral_mode }}"
           fi
 
