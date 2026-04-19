@@ -17,12 +17,25 @@ function App() {
     setError(null);
     try {
       const response = await fetch('/api/clips');
+      
+      const contentType = response.headers.get('content-type');
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to connect to library');
+        let errorMessage = 'Failed to connect to library';
+        if (contentType && contentType.includes('application/json')) {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } else {
+          errorMessage = `Server Error (${response.status}): The API is not reachable locally. Try running 'vercel dev' instead of 'npm run dev'.`;
+        }
+        throw new Error(errorMessage);
       }
-      const data = await response.json();
-      setClips(data || []);
+
+      if (contentType && contentType.includes('application/json')) {
+        const data = await response.json();
+        setClips(data || []);
+      } else {
+        throw new Error('Invalid response from server: Expected JSON but received something else.');
+      }
     } catch (err) {
       console.error('Fetch Error:', err.message);
       setError(err.message);
