@@ -22,19 +22,28 @@ export default async function handler(req, res) {
 
     try {
         const creds = JSON.parse(Buffer.from(base64Creds, 'base64').toString('utf-8'));
+        
+        // Normalize private key (handle escaped newlines from env vars)
+        const privateKey = creds.private_key.replace(/\\n/g, '\n');
+        
         const auth = new google.auth.JWT(
             creds.client_email,
             null,
-            creds.private_key,
+            privateKey,
             ['https://www.googleapis.com/auth/drive.readonly']
         );
+
+        // Pre-authorize to ensure headers are established
+        await auth.authorize();
 
         const drive = google.drive({ version: 'v3', auth });
 
         // Search for clips_db.json
         const list = await drive.files.list({
             q: `'${folderId}' in parents and name='clips_db.json' and trashed=false`,
-            fields: 'files(id)'
+            fields: 'files(id)',
+            // Explicitly pass auth to ensure it's used
+            auth: auth
         });
 
         if (!list.data.files || list.data.files.length === 0) {

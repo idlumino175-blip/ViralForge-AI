@@ -214,9 +214,71 @@ async function fetchTranscript(videoId) {
 }
 
 /**
+ * Fetch top relevant comments to find "Viral Hotspots"
+ */
+async function fetchTopComments(videoId) {
+    try {
+        console.log('  Analyzing audience reaction (Fetching top comments)...');
+        const url = `https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=${videoId}&maxResults=100&order=relevance&key=${YOUTUBE_API_KEY}`;
+        const data = await httpGet(url);
+        
+        if (!data.items) return null;
+        
+        return data.items.map(item => ({
+            text: item.snippet.topLevelComment.snippet.textDisplay,
+            likes: item.snippet.topLevelComment.snippet.likeCount
+        }));
+    } catch (e) { 
+        console.log(`  ⚠️  Comment fetch failed: ${e.message}`);
+        return null; 
+    }
+}
+
+/**
+ * Analyze comments to find timestamps and hype clusters
+ */
+function analyzeHumanEngagement(comments) {
+    if (!comments || comments.length === 0) return "No audience data available.";
+
+    const timestampMap = {};
+    const hypeKeywords = ['😂', '🔥', 'legend', 'savage', 'insane', 'truth', 'wow', 'lmao', 'killed it'];
+    let hypeCount = 0;
+
+    comments.forEach(c => {
+        const text = c.text.toLowerCase();
+        
+        // 1. Extract timestamps (e.g., 5:20, 1:22:10)
+        const tsMatch = text.match(/\d{1,2}:\d{2}(:\d{2})?/g);
+        if (tsMatch) {
+            tsMatch.forEach(ts => {
+                timestampMap[ts] = (timestampMap[ts] || 0) + 1 + (c.likes > 10 ? 2 : 0);
+            });
+        }
+
+        // 2. Count overall hype
+        hypeKeywords.forEach(word => {
+            if (text.includes(word)) hypeCount++;
+        });
+    });
+
+    // Sort timestamps by "popularity"
+    const topTimestamps = Object.entries(timestampMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(entry => entry[0]);
+
+    return `
+AUDIENCE HEATMAP:
+- High interest timestamps mentioned by viewers: ${topTimestamps.join(', ') || 'None specifically mentioned'}
+- General Hype Level: ${hypeCount > 20 ? 'EXTREME' : hypeCount > 10 ? 'HIGH' : 'MODERATE'}
+- Common audience reactions: ${hypeCount} instances of hype/laughter detected.
+`;
+}
+
+/**
  * Find ALL viral clips from a video using Gemini AI
  */
-async function findViralClips(videoData, videoId, transcript = null, description = null) {
+async function findViralClips(videoData, videoId, transcript = null, description = null, humanHeatmap = null) {
     const durationSeconds = parseDuration(videoData.duration);
     const durationFormatted = formatTime(durationSeconds);
 
@@ -226,9 +288,13 @@ async function findViralClips(videoData, videoId, transcript = null, description
     const context = `
 TRANSCRIPT: ${transcript || "Not available"}
 DESCRIPTION/TIMESTAMPS: ${description || "Not available"}
+AUDIENCE DATA (HUMAN HEATMAP): ${humanHeatmap || "Not available"}
 `;
 
     const prompt = `You are a viral content expert for Gen Z (Shorts/Reels/TikTok). Find 8 to 10 HIGH-IMPACT viral clips.
+
+CRITICAL INSTRUCTION:
+Check the "AUDIENCE DATA (HUMAN HEATMAP)" above. If humans are excited about specific timestamps in the comments, PRIORITIZE those moments. Cross-reference them with the transcript to find the exact start/end of the viral hook that matches the audience interest.
 
 VIDEO: ${videoData.title}
 DURATION: ${durationFormatted}
@@ -495,7 +561,12 @@ async function processSingleVideo(url, layout, isViral, automationMode = true) {
     console.log('\n[2/3] Analyzing for 8-10 viral moments...');
     const transcript = await fetchTranscript(videoId);
     const description = await fetchDescription(videoId);
-    const clips = await findViralClips(videoData, videoId, transcript, description);
+    
+    // Viral Hotspot Analysis
+    const comments = await fetchTopComments(videoId);
+    const humanHeatmap = analyzeHumanEngagement(comments);
+    
+    const clips = await findViralClips(videoData, videoId, transcript, description, humanHeatmap);
     
     if (clips.length === 0) {
         console.log('\n   ⚠️  No viral clips found for this video.');
