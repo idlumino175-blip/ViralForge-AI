@@ -5,6 +5,7 @@ import { Play, Download, ExternalLink, Moon, Sun, Search, RefreshCw } from 'luci
 function App() {
   const [clips, setClips] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -13,19 +14,19 @@ function App() {
 
   const fetchClips = async () => {
     setLoading(true);
+    setError(null);
     try {
       const response = await fetch('/api/clips');
-      if (!response.ok) throw new Error('Database not found');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to connect to library');
+      }
       const data = await response.json();
-      setClips(data);
+      setClips(data || []);
     } catch (err) {
-      console.log('Static preview mode...');
-      setClips([
-        { title: "Khan Sir: The Truth About Jobs", videoId: "sX6gEwH-SA4", driveLink: "#", layout: "letterbox", processedAt: new Date().toISOString() },
-        { title: "Education System Breakdown", videoId: "sX6gEwH-SA4", driveLink: "#", layout: "center", processedAt: new Date().toISOString() },
-        { title: "Why Innovation Fails", videoId: "sX6gEwH-SA4", driveLink: "#", layout: "split", processedAt: new Date().toISOString() },
-        { title: "The Future of Politics", videoId: "sX6gEwH-SA4", driveLink: "#", layout: "letterbox", processedAt: new Date().toISOString() }
-      ]);
+      console.error('Fetch Error:', err.message);
+      setError(err.message);
+      setClips([]);
     } finally {
       setLoading(false);
     }
@@ -65,7 +66,12 @@ function App() {
         />
       </div>
 
-      {loading ? (
+      {error ? (
+        <div className="error-state">
+           <p style={{ color: '#D97757', marginBottom: '1rem' }}>{error}</p>
+           <button className="btn btn-outline" onClick={fetchClips}>Retry Sync</button>
+        </div>
+      ) : loading ? (
         <div className="loading">
           <div className="spinner"></div>
           <p style={{ fontFamily: 'Source Serif 4', color: '#92928F' }}>Opening Library...</p>

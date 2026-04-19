@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     const folderId = process.env.GDRIVE_FOLDER_ID;
 
     if (!base64Creds || !folderId) {
-        return res.status(500).json({ error: 'Server configuration missing' });
+        return res.status(500).json({ error: 'Server configuration error: GDRIVE environment variables missing.' });
     }
 
     try {
@@ -37,7 +37,7 @@ export default async function handler(req, res) {
         });
 
         if (!list.data.files || list.data.files.length === 0) {
-            return res.status(404).json({ error: 'Database file not found' });
+            return res.status(404).json({ error: 'No clips database found on Google Drive. Run the analyzer first.' });
         }
 
         const fileId = list.data.files[0].id;
@@ -46,9 +46,11 @@ export default async function handler(req, res) {
             alt: 'media'
         });
 
+        // Set cache control for 60 seconds to improve performance
+        res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate');
         return res.status(200).json(fileContent.data);
     } catch (error) {
         console.error('API Error:', error.message);
-        return res.status(500).json({ error: error.message });
+        return res.status(500).json({ error: `Connection failed: ${error.message}` });
     }
 }

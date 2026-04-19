@@ -5,6 +5,7 @@
 
 const https = require('https');
 const fs = require('fs');
+require('dotenv').config();
 const path = require('path');
 const { exec, execSync } = require('child_process');
 const { google } = require('googleapis');
@@ -363,7 +364,7 @@ async function downloadClip(videoId, clip, outputDir = './downloads', layout = '
         const safeTitle = clip.title.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 50);
         const tempFile = `${outputDir}/${safeTitle}_temp.mp4`;
         const outputFile = `${outputDir}/${safeTitle}.mp4`;
-        let downloadCmd = `yt-dlp -f "best[height<=1080]" --download-sections "*${startTime}-${endTime}" --merge-output-format mp4 --extractor-args "youtube:player-client=android,web" --output "${tempFile}" "https://youtube.com/watch?v=${videoId}"`;
+        let downloadCmd = `yt-dlp -f "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --download-sections "*${startTime}-${endTime}" --merge-output-format mp4 --extractor-args "youtube:player-client=android,web" --output "${tempFile}" "https://youtube.com/watch?v=${videoId}"`;
         if (fs.existsSync('cookies.txt')) {
             downloadCmd = downloadCmd.replace('yt-dlp', 'yt-dlp --cookies cookies.txt');
         }
@@ -399,9 +400,9 @@ async function downloadClip(videoId, clip, outputDir = './downloads', layout = '
                 const finalV = [vFilter, crop, 'scale=1080:1080'].filter(f => f).join(',');
                 filterConfig = `-vf "${finalV}"`;
             } else if (layout === 'letterbox') {
-                // Shorts-Ready: 1:1 square crop (sees full desk) padded into 9:16 frame
-                const finalV = [vFilter, 'crop=ih:ih', 'scale=1080:1080', 'pad=1080:1920:0:420:black'].filter(f => f).join(',');
-                filterConfig = `-vf "${finalV}"`;
+                // PREMIUM SHORTS FORMAT: Keeps original sharp 16:9 video in the middle, fills the empty vertical space with a heavily blurred & stretched background of the video
+                const base = vFilter ? ` [0:v]${vFilter},` : ' [0:v]';
+                filterConfig = `-filter_complex "${base}split[v1][v2];[v1]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:20[bg];[v2]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[outv]" -map "[outv]" -map 0:a`;
             } else {
                 let crop = 'crop=ih*(9/16):ih'; // center default
                 if (layout === 'left') crop = 'crop=ih*(9/16):ih:0:0';
@@ -410,25 +411,31 @@ async function downloadClip(videoId, clip, outputDir = './downloads', layout = '
                 filterConfig = `-vf "${finalV}"`;
             }
 
-            const convertCmd = `ffmpeg -i "${tempFile}" ${filterConfig} -af "${audioFilter}" -c:v libx264 -preset fast -c:a aac -b:a 128k "${outputFile}" -y`;
-            exec(convertCmd, { timeout: 120000 }, async (convError) => {
-                try { fs.unlinkSync(tempFile); } catch (e) {}
+            // Added 3000k bitrate as exactly specified in COMPLETE_GUIDE.md (2500-3500 kbps) for crystal clear quality
+            const convertCmd = `ffmpeg -i "${tempFile}" ${filterConfig} -af "${audioFilter}" -c:v libx264 -preset fast -b:v 3000k -maxrate 3500k -bufsize 7000k -c:a aac -b:a 128k "${outputFile}" -y`;
+            exec(convertCmd, { timeout: 300000 }, async (convError) => {
+                setTimeout(() => { try { fs.unlinkSync(tempFile); } catch (e) {} }, 3000);
                 if (convError) {
                     console.log(`   ⚠️  Convert failed: ${convError.message}`);
+                    reject(convError);
                 } else {
                     console.log(`   ✅ Video processed successfully!`);
+                    
+                    // NEW: Upload to Google Drive and sync metadata
                     const driveData = await uploadToDrive(outputFile, path.basename(outputFile));
                     if (driveData) {
                         await updateMetadataDB({
                             title: clip.title,
-                            videoId,
-                            originalUrl: `https://youtube.com/watch?v=${videoId}`,
+                            videoId: videoId,
                             driveLink: driveData.link,
-                            duration: clip.duration_seconds,
+                            driveId: driveData.id,
                             layout: layout
                         });
-                        try { fs.unlinkSync(outputFile); } catch (e) {}
                     }
+                    
+                    // ALWAYS clean up local output file to keep it strictly one-by-one and save disk space
+                    console.log(`   🧹 Cleaning up local file: ${path.basename(outputFile)}`);
+                    setTimeout(() => { try { fs.unlinkSync(outputFile); } catch (e) {} }, 5000);
                 }
                 resolve(outputFile);
             });
@@ -440,11 +447,17 @@ async function downloadClip(videoId, clip, outputDir = './downloads', layout = '
  * Download all clips
  */
 async function downloadAllClips(videoId, clips, layout = 'center') {
-    console.log('\n📥 STARTING DOWNLOADS...');
+    console.log('\n📥 STARTING DOWNLOADS (ONE-BY-ONE FLOW)...');
+    let count = 1;
     for (const clip of clips) {
-        try { await downloadClip(videoId, clip, './downloads', layout); } catch (e) {
+        try { 
+            console.log(`\n⏳ Processing Clip ${count} of ${clips.length}...`);
+            await downloadClip(videoId, clip, './downloads', layout); 
+            console.log(`✨ Clip ${count} finished and cleaned up! Moving to next...`);
+        } catch (e) {
             console.log(`   ❌ Failed: ${clip.title} (${e.message})`);
         }
+        count++;
     }
 }
 
@@ -505,7 +518,7 @@ async function main() {
     const args = process.argv.slice(2);
     const isBatch = args.includes('--batch');
     const cliUrl = args.find(a => a.startsWith('http'));
-    const cliLayout = args.find(a => !a.startsWith('--') && !a.startsWith('http')) || 'letterbox';
+    const cliLayout = args.find(a => !a.startsWith('--') && !a.startsWith('http')) || 'center';
     const cliViral = args.includes('y');
 
     const readline = require('readline');
@@ -588,13 +601,6 @@ async function main() {
                 }
             }
         }
-    } catch (error) {
-        console.error('\n   ❌ Error:', error.message);
-    } finally {
-        rl.close();
-    }
-}
-        console.error('\nError:', error.message);
     } finally {
         rl.close();
     }
