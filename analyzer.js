@@ -436,7 +436,7 @@ async function downloadClip(videoId, clip, outputDir = './downloads', layout = '
         }
 
         console.log(`\n⬇️  Downloading: ${clip.title} (${clip.timestamp_start} - ${clip.timestamp_end})`);
-        exec(downloadCmd, { timeout: 180000 }, async (error) => {
+        exec(downloadCmd, { timeout: 900000 }, async (error) => {
             if (error) return reject(error);
             if (layout === 'original') return resolve(outputFile);
 
@@ -466,9 +466,9 @@ async function downloadClip(videoId, clip, outputDir = './downloads', layout = '
                 const finalV = [vFilter, crop, 'scale=1080:1080'].filter(f => f).join(',');
                 filterConfig = `-vf "${finalV}"`;
             } else if (layout === 'letterbox') {
-                // PREMIUM SHORTS FORMAT: Keeps original sharp 16:9 video in the middle, fills the empty vertical space with a heavily blurred & stretched background of the video
+                // Optimized PREMIUM SHORTS FORMAT: Scales down before blurring (much faster)
                 const base = vFilter ? ` [0:v]${vFilter},` : ' [0:v]';
-                filterConfig = `-filter_complex "${base}split[v1][v2];[v1]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:20[bg];[v2]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[outv]" -map "[outv]" -map 0:a`;
+                filterConfig = `-filter_complex "${base}split[v1][v2];[v1]scale=320:568,boxblur=10:10,scale=1080:1920[bg];[v2]scale=1080:1920:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[outv]" -map "[outv]" -map 0:a`;
             } else {
                 let crop = 'crop=ih*(9/16):ih'; // center default
                 if (layout === 'left') crop = 'crop=ih*(9/16):ih:0:0';
@@ -477,9 +477,9 @@ async function downloadClip(videoId, clip, outputDir = './downloads', layout = '
                 filterConfig = `-vf "${finalV}"`;
             }
 
-            // Added 3000k bitrate as exactly specified in COMPLETE_GUIDE.md (2500-3500 kbps) for crystal clear quality
-            const convertCmd = `ffmpeg -i "${tempFile}" ${filterConfig} -af "${audioFilter}" -c:v libx264 -preset fast -b:v 3000k -maxrate 3500k -bufsize 7000k -c:a aac -b:a 128k "${outputFile}" -y`;
-            exec(convertCmd, { timeout: 300000 }, async (convError) => {
+            // Switched to -preset superfast for 2-3x faster rendering at 3000k bitrate (no visible quality loss)
+            const convertCmd = `ffmpeg -i "${tempFile}" ${filterConfig} -af "${audioFilter}" -c:v libx264 -preset superfast -b:v 3000k -maxrate 3500k -bufsize 7000k -c:a aac -b:a 128k "${outputFile}" -y`;
+            exec(convertCmd, { timeout: 900000 }, async (convError) => {
                 setTimeout(() => { try { fs.unlinkSync(tempFile); } catch (e) {} }, 3000);
                 if (convError) {
                     console.log(`   ⚠️  Convert failed: ${convError.message}`);
@@ -512,10 +512,14 @@ async function downloadClip(videoId, clip, outputDir = './downloads', layout = '
 /**
  * Download all clips
  */
-async function downloadAllClips(videoId, clips, layout = 'center') {
+async function downloadAllClips(videoId, clips, layout = 'center', isBatch = false) {
     console.log('\n📥 STARTING DOWNLOADS (ONE-BY-ONE FLOW)...');
+    
+    // Limit to first 4 clips for single/resume mode as requested, but keep full batch for --batch mode
+    const clipsToProcess = isBatch ? clips : clips.slice(0, 4);
+    
     let count = 1;
-    for (const clip of clips) {
+    for (const clip of clipsToProcess) {
         try { 
             console.log(`\n⏳ Processing Clip ${count} of ${clips.length}...`);
             await downloadClip(videoId, clip, './downloads', layout); 
@@ -580,7 +584,7 @@ async function processSingleVideo(url, layout, isViral, automationMode = true) {
     console.log(`      📐 Layout: ${layout} | 🔥 Viral: ${isViral ? 'YES' : 'NO'}`);
     
     clips.forEach(c => c.viralMode = isViral);
-    await downloadAllClips(videoId, clips, layout);
+    await downloadAllClips(videoId, clips, layout, !automationMode);
     
     return true;
 }
@@ -589,7 +593,15 @@ async function main() {
     const args = process.argv.slice(2);
     const isBatch = args.includes('--batch');
     const cliUrl = args.find(a => a.startsWith('http'));
-    const cliLayout = args.find(a => !a.startsWith('--') && !a.startsWith('http')) || 'center';
+    const resumeIndex = args.indexOf('--resume');
+    const resumeFile = resumeIndex !== -1 ? args[resumeIndex + 1] : null;
+
+    const cliLayout = args.find(a => 
+        !a.startsWith('--') && 
+        !a.startsWith('http') && 
+        a !== resumeFile &&
+        a !== 'y' && a !== 'n'
+    ) || 'center';
     const cliViral = args.includes('y');
 
     const readline = require('readline');
@@ -603,6 +615,23 @@ async function main() {
         else console.log('VIRAL CLIP ANALYZER');
         console.log('='.repeat(60));
 
+        const resumeArg = args.find(a => a.startsWith('--resume'));
+        if (resumeArg) {
+            const jsonFile = args[args.indexOf('--resume') + 1];
+            if (!jsonFile || !fs.existsSync(jsonFile)) {
+                console.log('❌ JSON file not found for resume.');
+                return;
+            }
+            const data = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
+            const videoId = extractVideoId(data.videoUrl);
+            console.log(`🚀 RESUMING PROCESSING: ${data.videoTitle}`);
+            console.log(`📦 Clips to process: ${data.clips.length}`);
+            
+            data.clips.forEach(c => c.viralMode = cliViral);
+    await downloadAllClips(videoId, data.clips, cliLayout, false); // Resume is treated as single video (limit 4)
+            return;
+        }
+
         if (isBatch) {
             if (!fs.existsSync('urls.txt')) {
                 console.log('❌ urls.txt not found. Create it with YouTube URLs to start batch mode.');
@@ -613,7 +642,7 @@ async function main() {
 
             for (let i = 0; i < urls.length; i++) {
                 console.log(`\n📦 PROCESSING VIDEO ${i + 1}/${urls.length}: ${urls[i]}`);
-                const success = await processSingleVideo(urls[i], cliLayout, cliViral);
+                const success = await processSingleVideo(urls[i], cliLayout, cliViral, false); // false = batch mode
                 
                 if (success) {
                     // Update urls.txt to remove the finished URL
